@@ -1,0 +1,52 @@
+---
+# example playbook to add user to server with group and sudo style command
+- name: Add a new user
+  hosts: developers
+  become: true
+  vars:
+    username: username
+    password: password
+    temp_dir: "/tmp/ansible_tmp"
+  tasks:
+    - name: Check if apache group exists
+      command: getent group apache
+      register: apache_group_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Check if developers group exists
+      command: getent group developers
+      register: developers_group_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Create a new user
+      user:
+        name: "{{ username }}"
+        password: "{{ password | password_hash('sha512') }}"
+        shell: /bin/bash
+        createhome: yes
+        home: "/home/{{ username }}"
+        state: present
+
+    - name: Add user to sudoers on dev servers
+      lineinfile:
+        dest: /etc/sudoers
+        state: present
+        line: "{{ username }} ALL=(ALL)      ALL"
+        validate: '/usr/sbin/visudo -cf %s'
+      when: (inventory_hostname != 'server.not-this.one.domain.name' and inventory_hostname != 'server.prod.domain.name')  and developers_group_check is succeeded
+    
+    - name: Add user to developers group
+      user:
+        name: "{{ username }}"
+        groups: developers
+        append: yes
+      when: developers_group_check is succeeded
+
+    - name: Add user to apache group
+      user:
+        name: "{{ username }}"
+        groups: apache
+        append: yes
+      when: apache_group_check is succeeded
